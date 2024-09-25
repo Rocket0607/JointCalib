@@ -12,6 +12,7 @@ void CameraCalibrator::set_input(
     const std::vector<cv::Mat> &vec_mat_, const cv::Size &chessboard_size_,
     const std::vector<std::vector<std::string>> &lidar_3d_pts) {
   // lidar
+  // converts 2d vector of lidar pts as strings to Point3f
   std::vector<std::vector<cv::Point3f>> pts;
   for (auto src : lidar_3d_pts) {
     std::vector<cv::Point3f> pt;
@@ -36,7 +37,9 @@ void CameraCalibrator::set_input(
   int i = 0;
   for (const auto &img : vec_mat_) {
     CHECK(1 == img.channels()) << "images must be gray";
-    std::vector<cv::Point2f> corner_pts;
+    // self explanatory, finds corners of board. Used to calibrate the distortion factor and board-camera extrinsic.
+    std::vector<cv::Point2f> corner_pts
+    // constructor: cv::findChessboardCorners (InputArray image, Size patternSize, OutputArray corners, int flags=CALIB_CB_ADAPTIVE_THRESH+CALIB_CB_NORMALIZE_IMAGE)
     int found = cv::findChessboardCorners(img, chessboard_size_, corner_pts,
                                           cv::CALIB_CB_ADAPTIVE_THRESH |
                                               cv::CALIB_CB_FAST_CHECK |
@@ -46,10 +49,14 @@ void CameraCalibrator::set_input(
     }
     cv::Mat img_copy = img.clone();
     available_imgs.push_back(img_copy);
+    // this is the private property for lidar_3d_points not the parameter
     lidar_3d_pts_.push_back(pts[i]);
     std::cout << images_name[i] << std::endl;
+    // TODO: why the i++ here? if found was false, and the loop continued, wouldn't i be out of sync with the img. Does i even correspond to certain images?
     i++;
     cv::TermCriteria criteria(2, 30, 0.001);
+    // Refines the corner poses found through findChessboardCorners
+    // void cv::cornerSubPix(InputArray image, InputOutputArray corners, Size winSize, Size zeroZone, TermCriteria criteria)	
     cv::cornerSubPix(img, corner_pts, chessboard_size_, cv::Size(-1, -1),
                      criteria);
     _imgs_pts.push_back(corner_pts);
@@ -340,15 +347,20 @@ void CameraCalibrator::image_undistort(const cv::Mat &img,
 void CameraCalibrator::make_board_points(const cv::Size &chessboard_size_) {
   std::vector<cv::Point2f> vec_points;
   std::vector<cv::Point3f> vec_points_3d;
+  // created a vector of all the points on the board and appended to object-level _board_points(_3d)
   for (int r = 0; r < chessboard_size_.height; ++r) {
     for (int c = 0; c < chessboard_size_.width; ++c) {
+      // emplace_back is functionally just push_back 
+      // (but it constructs the object within the vector rather than creating a copy first)
       vec_points.emplace_back(c, r);
       vec_points_3d.emplace_back(c, r, 0);
     }
   }
+  // _board_pts was cleared in set_input (nothing else)
   _boards_pts.push_back(vec_points);
   _boards_pts_3d.push_back(vec_points_3d);
 
+  // not exactly sure but i think these are the points of the circles (with respect to the boards coords)
   std::vector<cv::Point3f> vec_points_cir;
   vec_points_cir.emplace_back(1.82f, -3.12f, 0.0f);  // sim
   vec_points_cir.emplace_back(14.18f, -3.12f, 0.0f); // sim
