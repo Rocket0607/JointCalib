@@ -58,7 +58,7 @@ int main(int argc, char **argv) {
   // CameraCalibrator is a custom class (no constructor)
   CameraCalibrator m;
 
-  // I think this is the initial randomn camera matrix that then gets optimized
+  // TODO: I don't know what this is for
   // Constructs cv matrix using constructor: cv::Mat(int rows, int cols, int (enum) type, const Scalar (cv type) &s)
   // CV_32FC1: type of matrix element, single channel 32 bit float
   // cv::Scalar::all(0): sets all values to 0
