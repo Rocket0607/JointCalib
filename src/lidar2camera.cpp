@@ -58,10 +58,10 @@ int main(int argc, char **argv) {
   // CameraCalibrator is a custom class (no constructor)
   CameraCalibrator m;
 
-  // TODO: I don't know what this is for
   // Constructs cv matrix using constructor: cv::Mat(int rows, int cols, int (enum) type, const Scalar (cv type) &s)
   // CV_32FC1: type of matrix element, single channel 32 bit float
   // cv::Scalar::all(0): sets all values to 0
+  // Used as input/output matrix for cv cameraCalibration function
   cv::Mat camera_matrix = cv::Mat(3, 3, CV_32FC1, cv::Scalar::all(0));
 
   // think this is the initial random distortion that gets calibrated later

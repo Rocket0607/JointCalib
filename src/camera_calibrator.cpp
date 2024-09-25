@@ -68,11 +68,33 @@ void CameraCalibrator::get_result(cv::Mat &camera_matrix, cv::Mat &k,
                                   const cv::Size &image_size,
                                   std::vector<cv::Mat> &rvecsMat,
                                   std::vector<cv::Mat> &tvecsMat) {
+/*
+  double cv::calibrateCamera	(	
+    InputArrayOfArrays 	objectPoints,
+    InputArrayOfArrays 	imagePoints,
+    Size 	imageSize,
+    InputOutputArray 	cameraMatrix,
+    InputOutputArray 	distCoeffs,
+    OutputArrayOfArrays 	rvecs,
+    OutputArrayOfArrays 	tvecs,
+    int 	flags = 0,
+    TermCriteria 	criteria = TermCriteria(TermCriteria::COUNT+TermCriteria::EPS, 30, DBL_EPSILON) 
+  )	
+*/
+// boards_pts_3d are the calculated points of the board (calculated using size of board)
+// img_pts are the points of the board found using the image and cv functions
+// camera_matrix stores the intrinsic camera matrix
+// k stores the distortion coefficients
+// other two vecs store rotation and translation data (for camera-board) for each image
+// last param ensures principal point does not move
+// returns the RMS re-projection error, which measures the accuracy of the camera calibration
+// (I think its based off of the distance between the 3d points and the marked points on the image)
   double re_error =
       cv::calibrateCamera(_boards_pts_3d, _imgs_pts, image_size, camera_matrix,
                           k, rvecsMat, tvecsMat, CV_CALIB_FIX_PRINCIPAL_POINT);
   std::cout << "reprojection is " << re_error << std::endl;
 
+  // Storing intrinsic values in a Matrix3d instead of a cv matrix
   Eigen::Matrix3d camera_intrinsic;
   camera_intrinsic << camera_matrix.at<double>(0, 0),
       camera_matrix.at<double>(0, 1), camera_matrix.at<double>(0, 2),
@@ -80,18 +102,26 @@ void CameraCalibrator::get_result(cv::Mat &camera_matrix, cv::Mat &k,
       camera_matrix.at<double>(1, 2), camera_matrix.at<double>(2, 0),
       camera_matrix.at<double>(2, 1), camera_matrix.at<double>(2, 2);
 
+  // Converting cv-found distortion values to different dataype, similar to above
   Eigen::VectorXd distort(2);
   distort << k.at<double>(0, 0), k.at<double>(0, 1);
+
 
   std::vector<Eigen::MatrixXd> vec_extrinsics;
   for (size_t i = 0; i < rvecsMat.size(); i++) {
     cv::Mat rvec = rvecsMat[i];
     cv::Mat tvec = tvecsMat[i];
     cv::Mat rot;
+    // Rodrigues converts a rotation matrix to a rotation vector or vice verse
+    // In this case, it seems to be vector->matrix
     cv::Rodrigues(rvec, rot);
     std::vector<cv::Point2f> imgpoints_cir;
+
+    // calculates the 2d points on the image where the 3d points would lie
+    // 3d points in this case were the hardcoded values from make_board_points
     cv::projectPoints(_boards_pts_cir[i], rvecsMat[i], tvecsMat[i],
                       camera_matrix, k, imgpoints_cir);
+    // finding min and max for x and y points
     size_t y_min = imgpoints_cir[0].y;
     size_t y_max = imgpoints_cir[0].y;
     size_t x_min = imgpoints_cir[0].x;
@@ -106,6 +136,9 @@ void CameraCalibrator::get_result(cv::Mat &camera_matrix, cv::Mat &k,
       if (imgpoints_cir[i].x < x_min)
         x_min = imgpoints_cir[i].x;
     }
+
+    // I think this appends the points in a certain order: lt, rt, lb, rb
+    // This order is assumed later so I think its being set here
     std::vector<cv::Point2f> imgpoints_cir1; // scl
     for (size_t i = 0; i < 4; i++) {
       if ((imgpoints_cir[i].x - x_min) <= 50 &&
@@ -132,12 +165,14 @@ void CameraCalibrator::get_result(cv::Mat &camera_matrix, cv::Mat &k,
       return;
     }
     _imgs_pts_cir2D_true.push_back(imgpoints_cir1);
+    // each of these holds a column
     Eigen::Vector3d r0, r1, r2, t;
     r0 << rot.at<double>(0, 0), rot.at<double>(1, 0), rot.at<double>(2, 0);
     r1 << rot.at<double>(0, 1), rot.at<double>(1, 1), rot.at<double>(2, 1);
     r2 << rot.at<double>(0, 2), rot.at<double>(1, 2), rot.at<double>(2, 2);
     t << tvec.at<double>(0, 0), tvec.at<double>(0, 1), tvec.at<double>(0, 2);
 
+    // RT is the result of the minimization equation shown on page 4
     Eigen::MatrixXd RT(3, 4);
     RT.block<3, 1>(0, 0) = r0;
     RT.block<3, 1>(0, 1) = r1;
@@ -147,6 +182,9 @@ void CameraCalibrator::get_result(cv::Mat &camera_matrix, cv::Mat &k,
   }
 
   this->refine_all(camera_intrinsic, distort, vec_extrinsics);
+
+  // create point pairs used for optimization
+
   std::vector<LidarPointPair> lidar_point_pairs;
   for (size_t i = 0; i < _imgs_pts_cir2D_true.size(); i++) {
     cv::Mat img = available_imgs[i].clone();
@@ -194,6 +232,7 @@ void CameraCalibrator::get_result(cv::Mat &camera_matrix, cv::Mat &k,
       -0.9999999969, 0.0000667257, -0.0000409624, 2.5079706347;
   std::cout << initial_extrinsic << std::endl;
 
+  // provides solution using non-linear optimiser
   this->refine_lidar2camera(camera_intrinsic, distort, vec_extrinsics,
                             initial_extrinsic, lidar_point_pairs);
 
